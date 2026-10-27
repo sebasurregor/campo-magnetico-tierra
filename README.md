@@ -15,6 +15,9 @@ Tiene cuatro pestañas:
     apuntar la parte de arriba del celular (rombo).
   - Indicaciones en palabras ("Gira el celular hacia la derecha 12°", "Baja la punta 5°"), que se
     ponen en verde cuando la posición es correcta.
+  - Dibujos de cómo debe quedar el celular (visto desde arriba y, si se inclina o se gira, de lado o
+    de frente) y de cómo debe verse la brújula cuando la posición es correcta, junto a la brújula en vivo.
+  - Lista de pasos para ir directo a uno (por ejemplo "Plano hacia el norte").
   - Lectura actual de Bx, By, Bz frente a la esperada para esa posición.
   - Botón para capturar con 5 s de espera (para soltar el celular, por ejemplo boca abajo). Al
     terminar cada captura pasa sola al siguiente paso.
@@ -27,6 +30,8 @@ Tiene cuatro pestañas:
   - La orientación del celular: dirección de la punta, inclinación y giro sobre el eje largo.
   - Una alerta de interferencia cuando corresponde.
 - **Capturas**
+  - Al elegir una orientación (y, en las rotaciones, el ángulo) aparecen los mismos dibujos de la
+    posición y de la brújula; la nota se llena sola y la captura guarda los Bx, By, Bz esperados.
   - Captura promediada de 3 s (promedio ± desviación estándar), etiquetada con la orientación.
   - Tabla medido vs. teórico con diferencia y error porcentual.
   - Asistente de desfase con giro de 180°.

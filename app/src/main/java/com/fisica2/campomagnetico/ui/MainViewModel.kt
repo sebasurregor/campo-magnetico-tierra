@@ -259,6 +259,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------------------------------------------------------------- Modo guiado
 
+    /** Índices de los pasos de la guía que corresponden a una orientación de la pestaña Capturas (sin el giro de 180°). */
+    fun positionsFor(orientation: String): List<Int> =
+        guideSteps.withIndex().filter { it.value.orientation == orientation && it.value.kind == GuideKind.NORMAL }.map { it.index }
+
     /** Lectura (Bx, By, Bz) esperada en la posición del paso [index]. */
     fun expectedFor(index: Int): Vec3? {
         val step = guideSteps.getOrNull(index) ?: return null

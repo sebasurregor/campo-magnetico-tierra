@@ -18,6 +18,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -41,10 +45,6 @@ import com.fisica2.campomagnetico.MagMath
 import kotlin.math.cos
 import kotlin.math.sin
 
-private val OK_GREEN = Color(0xFF2E7D32)
-private val WRONG_ORANGE = Color(0xFFE65100)
-private val NORTH_RED = Color(0xFFD32F2F)
-private val MAG_GRAY = Color(0xFF757575)
 
 /** Pestaña "Guía": dice paso a paso cómo poner el celular, con brújula e indicaciones, y captura. */
 @Composable
@@ -93,35 +93,13 @@ fun GuideScreen(vm: MainViewModel) {
     Section(step.title) {
         Text(step.instruction, style = MaterialTheme.typography.bodyLarge)
     }
+    StepList(vm)
 
-    // Brújula + estado
-    Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        if (attitude == null || check == null) {
-            Note("Esperando datos del magnetómetro y del sensor de gravedad…", )
-            return@Card
-        }
-        Box(Modifier.fillMaxWidth().padding(top = 12.dp), contentAlignment = Alignment.Center) {
-            Compass(attitude, step.target, check, vm.theory.declinationDeg)
-        }
-        StatusBanner(check)
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Note("▲ = parte de arriba del celular · N rojo = norte geográfico · N gris = norte magnético (brújula) · ◆ = hacia donde debe apuntar")
-        }
-        AngleRows(attitude, step.target, check)
-    }
+    // Cómo debe quedar el celular + brújula objetivo y en vivo
+    PositionPanel(attitude, check, step.target, vm.theory.declinationDeg)
 
     // Lectura ahora vs esperada
-    val expected = vm.expectedFor(index)
-    if (r != null && expected != null) {
-        Section("Lectura del celular") {
-            TableRow(listOf("", "Ahora", "Esperado"), header = true, firstWeight = 0.6f)
-            TableRow(listOf("Bx", ut(r.b.x), ut(expected.x)), firstWeight = 0.6f)
-            TableRow(listOf("By", ut(r.b.y), ut(expected.y)), firstWeight = 0.6f)
-            TableRow(listOf("Bz", ut(r.b.z), ut(expected.z)), firstWeight = 0.6f)
-            TableRow(listOf("|B|", ut(r.b.norm), ut(expected.norm)), firstWeight = 0.6f)
-            Note("Los valores esperados son la proyección del campo teórico sobre los ejes del celular en la posición del paso.")
-        }
-    }
+    ReadingVsExpected(vm, vm.expectedFor(index))
 
     // Botones
     when {
@@ -173,133 +151,34 @@ fun GuideScreen(vm: MainViewModel) {
     }
 }
 
+/** Lista desplegable con todos los pasos para saltar directamente a uno (por ejemplo "Plano hacia el norte"). */
 @Composable
-private fun StatusBanner(check: GuideCheck) {
-    val color = if (check.ok) OK_GREEN else WRONG_ORANGE
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(12.dp),
-        colors = CardDefaults.cardColors(containerColor = color, contentColor = Color.White),
-    ) {
-        if (check.ok) {
-            Text(
-                "✔ Posición correcta: toca Capturar",
-                Modifier.padding(12.dp),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-        } else {
-            androidx.compose.foundation.layout.Column(Modifier.padding(12.dp)) {
-                check.hints.forEach { hint ->
-                    Text("→ $hint", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+private fun StepList(vm: MainViewModel) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    TextButton(onClick = { open = !open }, enabled = !vm.capturing) {
+        Text(if (open) "▲ Ocultar la lista de pasos" else "▼ Ver todos los pasos / ir a uno")
+    }
+    if (open) {
+        Card(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+            androidx.compose.foundation.layout.Column(Modifier.padding(8.dp)) {
+                vm.guideSteps.forEachIndexed { i, st ->
+                    val done = i in vm.guideDone
+                    val current = i == vm.guideIndex
+                    TextButton(
+                        onClick = { vm.goToGuideStep(i); open = false },
+                        enabled = !vm.capturing,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            "${i + 1}. ${st.title}" + (if (done) "  ✔" else "") + (if (current) "  ◀ actual" else ""),
+                            Modifier.fillMaxWidth(),
+                            fontWeight = if (current) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    }
                 }
             }
         }
     }
-}
-
-@Composable
-private fun AngleRows(a: Attitude, t: AttitudeTarget, check: GuideCheck) {
-    androidx.compose.foundation.layout.Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
-        TableRow(listOf("", "Ahora", "Objetivo", ""), header = true, firstWeight = 1.4f)
-        TableRow(
-            listOf("Dirección de la punta", headingText(a.headingDeg), targetText(t.headingDeg, ::headingText), mark(t.headingDeg, check.headingOk)),
-            firstWeight = 1.4f,
-        )
-        TableRow(
-            listOf("Inclinación de la punta", deg(a.pitchDeg), targetText(t.pitchDeg, ::deg), mark(t.pitchDeg, check.pitchOk)),
-            firstWeight = 1.4f,
-        )
-        TableRow(
-            listOf("Giro sobre el eje largo", deg(a.rollDeg), targetText(t.rollDeg, ::deg), mark(t.rollDeg, check.rollOk)),
-            firstWeight = 1.4f,
-        )
-        Note("Dirección: 0° = norte geográfico, 90° = este, ±180° = sur, −90° = oeste. Inclinación positiva = punta hacia abajo. " +
-            "Giro: 0° = pantalla arriba, 90° = de lado (borde derecho abajo), 180° = boca abajo.")
-    }
-}
-
-private fun targetText(v: Double, f: (Double) -> String) = if (v.isNaN()) "no importa" else f(v)
-private fun mark(v: Double, ok: Boolean) = if (v.isNaN()) "" else if (ok) "✔" else "✗"
-
-private fun headingText(h: Double): String {
-    val name = when (AttitudeMath.normalize180(h)) {
-        in -22.5..22.5 -> "N"
-        in 22.5..67.5 -> "NE"
-        in 67.5..112.5 -> "E"
-        in 112.5..157.5 -> "SE"
-        in -67.5..-22.5 -> "NO"
-        in -112.5..-67.5 -> "O"
-        in -157.5..-112.5 -> "SO"
-        else -> "S"
-    }
-    return "${deg(h)} ($name)"
-}
-
-/**
- * Brújula dibujada respecto al celular: el triángulo de arriba es la parte superior del teléfono.
- * Las letras giran para mostrar dónde están los puntos cardinales geográficos; la aguja gris marca el
- * norte magnético (donde apunta una brújula normal) y el rombo, hacia dónde debe apuntar la punta.
- */
-@Composable
-private fun Compass(a: Attitude, target: AttitudeTarget, check: GuideCheck, declinationDeg: Double) {
-    val measurer = rememberTextMeasurer()
-    val dial = MaterialTheme.colorScheme.onSurface
-    val faint = MaterialTheme.colorScheme.outline
-    val ringColor = if (check.headingOk) OK_GREEN else WRONG_ORANGE
-    Canvas(Modifier.size(240.dp)) {
-        val c = Offset(size.width / 2f, size.height / 2f)
-        val radius = size.minDimension / 2f - 22.dp.toPx()
-
-        drawCircle(ringColor, radius, c, style = Stroke(width = 4.dp.toPx()))
-        // Marcas cada 30°, ancladas al norte geográfico.
-        for (k in 0 until 12) {
-            val ang = k * 30.0 - a.headingDeg
-            val outer = polar(c, radius, ang)
-            val inner = polar(c, radius - (if (k % 3 == 0) 14.dp.toPx() else 8.dp.toPx()), ang)
-            drawLine(faint, inner, outer, strokeWidth = 2.dp.toPx())
-        }
-        // Letras de los puntos cardinales geográficos.
-        val letters = listOf("N" to 0.0, "E" to 90.0, "S" to 180.0, "O" to 270.0)
-        for ((label, bearing) in letters) {
-            val p = polar(c, radius + 12.dp.toPx(), bearing - a.headingDeg)
-            val color = if (label == "N") NORTH_RED else dial
-            val layout = measurer.measure(label, TextStyle(color = color, fontSize = 16.sp, fontWeight = FontWeight.Bold))
-            drawText(layout, topLeft = Offset(p.x - layout.size.width / 2f, p.y - layout.size.height / 2f))
-        }
-        // Aguja del norte geográfico (roja) y del norte magnético (gris).
-        drawNeedle(c, radius - 32.dp.toPx(), -a.headingDeg, NORTH_RED, 6.dp.toPx())
-        drawNeedle(c, radius - 44.dp.toPx(), declinationDeg - a.headingDeg, MAG_GRAY, 3.dp.toPx())
-        // Hacia dónde debe apuntar la punta.
-        if (!target.headingDeg.isNaN()) {
-            val p = polar(c, radius, target.headingDeg - a.headingDeg)
-            val s = 9.dp.toPx()
-            val diamond = Path().apply {
-                moveTo(p.x, p.y - s); lineTo(p.x + s, p.y); lineTo(p.x, p.y + s); lineTo(p.x - s, p.y); close()
-            }
-            drawPath(diamond, ringColor)
-        }
-        // Parte de arriba del celular (fija, dentro del anillo).
-        val tip = Path().apply {
-            val apex = c.y - radius + 6.dp.toPx()
-            moveTo(c.x, apex)
-            lineTo(c.x - 10.dp.toPx(), apex + 18.dp.toPx())
-            lineTo(c.x + 10.dp.toPx(), apex + 18.dp.toPx())
-            close()
-        }
-        drawPath(tip, dial)
-        drawCircle(dial, 5.dp.toPx(), c)
-    }
-}
-
-private fun DrawScope.drawNeedle(c: Offset, length: Float, angleDeg: Double, color: Color, width: Float) {
-    drawLine(color, c, polar(c, length, angleDeg), strokeWidth = width)
-    drawCircle(color, width, polar(c, length, angleDeg))
-}
-
-/** Punto a [r] del centro en el ángulo [deg] medido en sentido horario desde arriba. */
-private fun polar(c: Offset, r: Float, deg: Double): Offset {
-    val a = Math.toRadians(deg)
-    return Offset(c.x + r * sin(a).toFloat(), c.y - r * cos(a).toFloat())
 }
 
 @Composable
