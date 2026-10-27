@@ -3,6 +3,7 @@ package com.fisica2.campomagnetico.ui
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,7 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-private val TABS = listOf("En vivo", "Capturas", "Configuración")
+private val TAB_PADDING = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+private val TABS = listOf("Guía", "En vivo", "Capturas", "Ajustes")
 
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
@@ -54,9 +56,9 @@ fun MainScreen(vm: MainViewModel) {
             ) {
                 TABS.forEachIndexed { i, title ->
                     if (i == tab) {
-                        Button(onClick = { tab = i }, modifier = Modifier.weight(1f)) { Text(title, maxLines = 1) }
+                        Button(onClick = { tab = i }, modifier = Modifier.weight(1f), contentPadding = TAB_PADDING) { Text(title, maxLines = 1) }
                     } else {
-                        OutlinedButton(onClick = { tab = i }, modifier = Modifier.weight(1f)) { Text(title, maxLines = 1) }
+                        OutlinedButton(onClick = { tab = i }, modifier = Modifier.weight(1f), contentPadding = TAB_PADDING) { Text(title, maxLines = 1) }
                     }
                 }
             }
@@ -75,8 +77,9 @@ fun MainScreen(vm: MainViewModel) {
                     .padding(horizontal = 12.dp),
             ) {
                 when (tab) {
-                    0 -> LiveScreen(vm)
-                    1 -> CapturesScreen(vm)
+                    0 -> GuideScreen(vm)
+                    1 -> LiveScreen(vm)
+                    2 -> CapturesScreen(vm)
                     else -> SettingsScreen(vm)
                 }
             }

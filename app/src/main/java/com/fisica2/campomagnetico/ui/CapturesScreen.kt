@@ -93,8 +93,8 @@ fun CapturesScreen(vm: MainViewModel) {
             ) { Text("Borrar todas") }
         }
         Note(
-            if (vm.roundCsv) "Las coordenadas del CSV se redondean a 2 decimales (Configuración)."
-            else "Las coordenadas del CSV NO se redondean (Configuración).",
+            if (vm.roundCsv) "Las coordenadas del CSV se redondean a 2 decimales (Ajustes)."
+            else "Las coordenadas del CSV NO se redondean (Ajustes).",
         )
     }
 
@@ -165,7 +165,7 @@ private fun FlipWizard(vm: MainViewModel) {
 }
 
 @Composable
-private fun CaptureCard(c: Capture, onDelete: () -> Unit) {
+internal fun CaptureCard(c: Capture, onDelete: () -> Unit) {
     val time = TIME_FORMAT.format(Instant.ofEpochMilli(c.timeMillis).atZone(ZoneId.systemDefault()))
     val title = c.orientation + if (c.note.isNotBlank()) " — ${c.note}" else ""
     Section(title) {

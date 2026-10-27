@@ -51,6 +51,12 @@ class CaptureStore(context: Context) {
         }
         c.raw?.let { put("raw", vec(it)) }
         c.bias?.let { put("bias", vec(it)) }
+        c.expected?.let { put("expected", vec(it)) }
+        c.attitude?.let { a ->
+            put("attitude", JSONObject().apply {
+                putNum("h", a.headingDeg); putNum("p", a.pitchDeg); putNum("r", a.rollDeg)
+            })
+        }
         put("theorySource", c.theorySource)
         put("theory", JSONObject().apply {
             val t = c.theory
@@ -88,6 +94,8 @@ class CaptureStore(context: Context) {
                 x = t.num("x"), y = t.num("y"), z = t.num("z"), h = t.num("h"), f = t.num("f"),
                 inclinationDeg = t.num("i"), declinationDeg = t.num("d"), parallel = t.num("par"),
             ),
+            attitude = o.optJSONObject("attitude")?.let { a -> Attitude(a.num("h"), a.num("p"), a.num("r")) },
+            expected = o.optJSONObject("expected")?.let { vec(it) },
         )
     }
 

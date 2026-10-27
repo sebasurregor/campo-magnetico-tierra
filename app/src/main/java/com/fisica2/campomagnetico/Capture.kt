@@ -55,10 +55,18 @@ data class Capture(
     val bias: Vec3?,
     val theorySource: String,
     val theory: ReferenceValues,
+    /** Orientación promedio durante la captura (rumbo, inclinación de la punta, giro lateral). */
+    val attitude: Attitude? = null,
+    /** Lectura esperada para la posición del paso guiado (null si la captura no vino de la guía). */
+    val expected: Vec3? = null,
 ) {
     val deviceMean: Vec3 get() = Vec3(bx.mean, by.mean, bz.mean)
 
-    /** F, H, Z, I y B∥ medidos vs. teóricos; y, si es "Plano, y al norte", Bx, By, Bz vs. (Y, X, −Z). */
+    /** Bx, By, Bz esperados: los del paso guiado o, si es "Plano, y al norte", (Y, X, −Z). */
+    fun expectedReading(): Vec3? = expected
+        ?: if (orientation == Orientations.FLAT_NORTH) MagMath.expectedFlatNorth(theory.x, theory.y, theory.z) else null
+
+    /** F, H, Z, I y B∥ medidos vs. teóricos; y Bx, By, Bz vs. los esperados cuando se conocen. */
     fun comparison(): List<ComparisonRow> {
         val rows = mutableListOf<ComparisonRow>()
         val t = theory
@@ -69,11 +77,11 @@ data class Capture(
             rows += ComparisonRow("I", "I", "°", e.i.mean, t.inclinationDeg)
             rows += ComparisonRow("Bpar", "B∥", "μT", e.parallel.mean, t.parallel)
         }
-        if (orientation == Orientations.FLAT_NORTH) {
-            val exp = MagMath.expectedFlatNorth(t.x, t.y, t.z)
-            rows += ComparisonRow("Bx", "Bx (≈ Y)", "μT", bx.mean, exp.x)
-            rows += ComparisonRow("By", "By (≈ X)", "μT", by.mean, exp.y)
-            rows += ComparisonRow("Bz", "Bz (≈ −Z)", "μT", bz.mean, exp.z)
+        expectedReading()?.let { exp ->
+            val flat = expected == null
+            rows += ComparisonRow("Bx", if (flat) "Bx (≈ Y)" else "Bx", "μT", bx.mean, exp.x)
+            rows += ComparisonRow("By", if (flat) "By (≈ X)" else "By", "μT", by.mean, exp.y)
+            rows += ComparisonRow("Bz", if (flat) "Bz (≈ −Z)" else "Bz", "μT", bz.mean, exp.z)
         }
         return rows
     }
@@ -86,11 +94,13 @@ class CaptureAccumulator(private val latDeg: Double) {
     private val raw = mutableListOf<Vec3>()
     private val bias = mutableListOf<Vec3>()
     private var minAccuracy = Int.MAX_VALUE
+    private val attitudes = AttitudeAverager()
 
     val count: Int get() = device.size
 
-    fun add(b: Vec3, e: EarthField?, rawB: Vec3?, biasB: Vec3?, accuracy: Int) {
+    fun add(b: Vec3, e: EarthField?, rawB: Vec3?, biasB: Vec3?, accuracy: Int, attitude: Attitude? = null) {
         device += b
+        attitude?.let { attitudes.add(it) }
         e?.let { earth += it }
         rawB?.let { raw += it }
         biasB?.let { bias += it }
@@ -108,6 +118,7 @@ class CaptureAccumulator(private val latDeg: Double) {
         altM: Double,
         theorySource: String,
         theory: ReferenceValues,
+        expected: Vec3? = null,
     ): Capture? {
         if (device.size < 2) return null
         val earthStats = if (earth.size >= 2) {
@@ -141,6 +152,8 @@ class CaptureAccumulator(private val latDeg: Double) {
             bias = mean(bias),
             theorySource = theorySource,
             theory = theory,
+            attitude = attitudes.mean(),
+            expected = expected,
         )
     }
 

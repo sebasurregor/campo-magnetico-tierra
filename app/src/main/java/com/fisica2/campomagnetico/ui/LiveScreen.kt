@@ -20,6 +20,9 @@ fun LiveScreen(vm: MainViewModel) {
     if (MagMath.isOutOfRange(r.b.norm) || MagMath.isLowAccuracy(r.accuracy)) {
         WarningBox(INTERFERENCE_TEXT)
     }
+    r.earth?.let { e ->
+        if (MagMath.isVerticalSignWrong(e.z, vm.theory.z)) WarningBox(FIELD_UP_TEXT)
+    }
 
     // RF1
     Section("Lectura en vivo (TYPE_MAGNETIC_FIELD)") {
@@ -30,6 +33,16 @@ fun LiveScreen(vm: MainViewModel) {
         ValueRow("Precisión", accuracyLabel(r.accuracy))
         Note("Ejes del teléfono: con el teléfono plano y la pantalla hacia arriba, x apunta a la derecha, " +
             "y hacia la parte superior y z sale de la pantalla.")
+    }
+
+    r.attitude?.let { a ->
+        Section("Orientación del celular") {
+            ValueRow("Dirección de la punta (0° = norte geográfico)", deg(a.headingDeg))
+            ValueRow("Inclinación de la punta (+ = hacia abajo)", deg(a.pitchDeg))
+            ValueRow("Giro sobre el eje largo (0° = pantalla arriba)", deg(a.rollDeg))
+            Note("Se calcula con el sensor de gravedad y el magnetómetro. La pestaña Guía usa estos ángulos " +
+                "para decirte cómo poner el celular.")
+        }
     }
 
     // RF2
@@ -84,7 +97,7 @@ fun LiveScreen(vm: MainViewModel) {
         TableRow(listOf("I", deg(p.inclinationDeg), deg(m.inclinationDeg)), firstWeight = 0.6f)
         TableRow(listOf("D", deg(p.declinationDeg), deg(m.declinationDeg)), firstWeight = 0.6f)
         TableRow(listOf("B∥", ut(p.parallel), ut(m.parallel)), firstWeight = 0.6f)
-        Note("✔ = valores usados para comparar (se cambia en Configuración).")
+        Note("✔ = valores usados para comparar (se cambia en Ajustes).")
         Note("Nota: los valores de GeomagneticField dependen de la versión del modelo geomagnético que trae " +
             "Android en este teléfono; por eso se muestran junto a los del plan.")
         Note("Ubicación: ${fmt1Coord(vm.lat)}, ${fmt1Coord(vm.lon)}, ${fmt1(vm.altM)} m — ${vm.locationSource}.")

@@ -165,6 +165,14 @@ object MagMath {
 
     fun isOutOfRange(f: Double): Boolean = f < FIELD_MIN_UT || f > FIELD_MAX_UT
 
+    /**
+     * En Medellín (hemisferio norte magnético) el campo apunta hacia abajo: Z > 0. Si el Z medido tiene
+     * claramente el signo contrario al teórico, el magnetómetro del teléfono entrega los ejes invertidos o
+     * hay un imán muy cerca. Umbral de 3 μT para no saltar cerca del ecuador magnético.
+     */
+    fun isVerticalSignWrong(measuredZ: Double, theoryZ: Double): Boolean =
+        (theoryZ > 3.0 && measuredZ < -3.0) || (theoryZ < -3.0 && measuredZ > 3.0)
+
     /** Baja, no confiable o sin contacto (cualquier valor por debajo de MEDIUM). */
     fun isLowAccuracy(accuracy: Int): Boolean = accuracy < ACCURACY_MEDIUM
 }

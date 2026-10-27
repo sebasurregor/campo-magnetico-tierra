@@ -23,7 +23,8 @@ object CsvFormat {
         listOf("dif_${k}_$unit", "err_${k}_pct")
     } + listOf("Bx_esp_uT", "By_esp_uT", "Bz_esp_uT") + FLAT.flatMap { k ->
         listOf("dif_${k}_uT", "err_${k}_pct")
-    } + listOf("Bx_crudo_uT", "By_crudo_uT", "Bz_crudo_uT", "bias_x_uT", "bias_y_uT", "bias_z_uT")
+    } + listOf("Bx_crudo_uT", "By_crudo_uT", "Bz_crudo_uT", "bias_x_uT", "bias_y_uT", "bias_z_uT") +
+        listOf("rumbo_deg", "inclinacion_punta_deg", "giro_lateral_deg")
 
     fun build(captures: List<Capture>, roundCoordinates: Boolean, zone: ZoneId = ZoneId.systemDefault()): String {
         val sb = StringBuilder()
@@ -39,8 +40,7 @@ object CsvFormat {
         val t = c.theory
         val e = c.earth
         val rows = c.comparison().associateBy { it.key }
-        val flat = c.orientation == Orientations.FLAT_NORTH
-        val expected = MagMath.expectedFlatNorth(t.x, t.y, t.z)
+        val expected = c.expectedReading()
 
         val values = mutableListOf(
             dateFormat.format(Instant.ofEpochMilli(c.timeMillis).atZone(zone)),
@@ -63,12 +63,13 @@ object CsvFormat {
             values += num(rows[k]?.absDiff)
             values += num(rows[k]?.percent)
         }
-        values += if (flat) listOf(num(expected.x), num(expected.y), num(expected.z)) else listOf("", "", "")
+        values += if (expected != null) listOf(num(expected.x), num(expected.y), num(expected.z)) else listOf("", "", "")
         for (k in FLAT) {
             values += num(rows[k]?.absDiff)
             values += num(rows[k]?.percent)
         }
         values += listOf(num(c.raw?.x), num(c.raw?.y), num(c.raw?.z), num(c.bias?.x), num(c.bias?.y), num(c.bias?.z))
+        values += listOf(num(c.attitude?.headingDeg, 1), num(c.attitude?.pitchDeg, 1), num(c.attitude?.rollDeg, 1))
         return values
     }
 
