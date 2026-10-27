@@ -10,10 +10,16 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import com.fisica2.campomagnetico.Attitude
+import com.fisica2.campomagnetico.AttitudeMath
+import com.fisica2.campomagnetico.AttitudeSmoother
 import com.fisica2.campomagnetico.Capture
 import com.fisica2.campomagnetico.CaptureAccumulator
 import com.fisica2.campomagnetico.CaptureStore
 import com.fisica2.campomagnetico.EarthField
+import com.fisica2.campomagnetico.GuideKind
+import com.fisica2.campomagnetico.GuideStep
+import com.fisica2.campomagnetico.GuideSteps
 import com.fisica2.campomagnetico.LocationReader
 import com.fisica2.campomagnetico.MagMath
 import com.fisica2.campomagnetico.MagSample
@@ -35,6 +41,8 @@ data class LiveReading(
     val raw: Vec3?,
     val bias: Vec3?,
     val declinationUsedDeg: Double,
+    /** Orientación suavizada (null sin gravedad). */
+    val attitude: Attitude?,
 )
 
 enum class CapturePurpose { NORMAL, FLIP_0, FLIP_180 }
@@ -45,6 +53,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val sensors = SensorReader(app, ::onSample)
     private val locationReader = LocationReader(app)
     private val handler = Handler(Looper.getMainLooper())
+    private val smoother = AttitudeSmoother()
 
     val hasMagnetometer = sensors.hasMagnetometer
     val hasUncalibrated = sensors.hasUncalibrated
@@ -87,7 +96,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var captureOrientation = ""
     private var captureNote = ""
     private var capturePurpose = CapturePurpose.NORMAL
+    private var captureExpected: Vec3? = null
+    private var captureFromGuide = false
     private val finishRunnable = Runnable { finishCapture() }
+
+    // --- Modo guiado ---
+    /** Paso actual (0 a pasos − 1); igual al número de pasos cuando la guía terminó. */
+    var guideIndex by mutableIntStateOf(0)
+        private set
+    /** Pasos ya capturados en esta sesión. */
+    val guideDone = mutableStateListOf<Int>()
+    var lastGuideCapture by mutableStateOf<Capture?>(null)
+        private set
+    /** Segundos que faltan para que empiece una captura con espera (0 = sin espera en curso). */
+    var countdown by mutableIntStateOf(0)
+        private set
+    private var pendingGuideStep: Int = -1
+    private val countdownRunnable = object : Runnable {
+        override fun run() {
+            if (countdown <= 1) {
+                countdown = 0
+                beginGuidedCapture(pendingGuideStep)
+            } else {
+                countdown -= 1
+                handler.postDelayed(this, 1_000L)
+            }
+        }
+    }
 
     // --- Asistente de 180° ---
     var flip0 by mutableStateOf<Capture?>(null)
@@ -100,6 +135,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Valores con los que se compara y con cuya declinación se corrige el norte. */
     val theory: ReferenceValues get() = if (theorySource == TheorySource.MODEL) model else plan
 
+    /** Pasos del modo guiado (dependen de los valores teóricos elegidos). */
+    val guideSteps: List<GuideStep> get() = GuideSteps.build(theory)
+
     // ---------------------------------------------------------------- Sensores
 
     fun startSensors() {
@@ -109,6 +147,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun stopSensors() {
         sensors.stop()
+        smoother.reset()
+        if (countdown > 0) {
+            handler.removeCallbacks(countdownRunnable)
+            countdown = 0
+        }
         if (capturing) {
             cancelCapture()
             message = "Captura cancelada: la app pasó a segundo plano."
@@ -118,8 +161,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun onSample(s: MagSample) {
         val t = theory
         val earth = s.rotation?.let { MagMath.deviceToEarth(it, s.b, t.declinationDeg) }
+        val attitude = s.rotation?.let { AttitudeMath.fromRotation(it, t.declinationDeg) }
+        val smooth = attitude?.let { smoother.update(it) }
         accumulator?.let {
-            it.add(s.b, earth, s.raw, s.bias, s.accuracy)
+            it.add(s.b, earth, s.raw, s.bias, s.accuracy, attitude)
             captureCount = it.count
         }
         val now = SystemClock.elapsedRealtime()
@@ -134,13 +179,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 raw = s.raw,
                 bias = s.bias,
                 declinationUsedDeg = t.declinationDeg,
+                attitude = smooth,
             )
         }
     }
 
     // ---------------------------------------------------------------- Capturas
 
-    fun startCapture(orientation: String, note: String, purpose: CapturePurpose = CapturePurpose.NORMAL) {
+    fun startCapture(
+        orientation: String,
+        note: String,
+        purpose: CapturePurpose = CapturePurpose.NORMAL,
+        expected: Vec3? = null,
+        fromGuide: Boolean = false,
+    ) {
         if (capturing) return
         if (!hasMagnetometer) {
             message = "Este teléfono no tiene magnetómetro."
@@ -154,6 +206,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         captureOrientation = orientation
         captureNote = note.trim().take(80)
         capturePurpose = purpose
+        captureExpected = expected
+        captureFromGuide = fromGuide
         captureCount = 0
         capturing = true
         handler.postDelayed(finishRunnable, CAPTURE_MS)
@@ -180,6 +234,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             altM = altM,
             theorySource = theorySource.label,
             theory = theory,
+            expected = captureExpected,
         )
         if (capture == null) {
             message = "No llegaron suficientes muestras del sensor. Intenta de nuevo."
@@ -195,6 +250,66 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             CapturePurpose.FLIP_180 -> flip180 = capture
             CapturePurpose.NORMAL -> Unit
         }
+        if (captureFromGuide) {
+            lastGuideCapture = capture
+            if (guideIndex !in guideDone) guideDone.add(guideIndex)
+            guideIndex = (guideIndex + 1).coerceAtMost(guideSteps.size)
+        }
+    }
+
+    // ---------------------------------------------------------------- Modo guiado
+
+    /** Índices de los pasos de la guía que corresponden a una orientación de la pestaña Capturas (sin el giro de 180°). */
+    fun positionsFor(orientation: String): List<Int> =
+        guideSteps.withIndex().filter { it.value.orientation == orientation && it.value.kind == GuideKind.NORMAL }.map { it.index }
+
+    /** Lectura (Bx, By, Bz) esperada en la posición del paso [index]. */
+    fun expectedFor(index: Int): Vec3? {
+        val step = guideSteps.getOrNull(index) ?: return null
+        val t = theory
+        return AttitudeMath.expectedReading(t.x, t.y, t.z, step.target.asAttitude())
+    }
+
+    /** Captura del paso actual; con [delaySeconds] > 0 espera antes de empezar (para soltar el celular). */
+    fun captureGuideStep(delaySeconds: Int = 0) {
+        if (capturing || countdown > 0) return
+        if (guideSteps.getOrNull(guideIndex) == null) return
+        if (delaySeconds <= 0) {
+            beginGuidedCapture(guideIndex)
+        } else {
+            pendingGuideStep = guideIndex
+            countdown = delaySeconds
+            handler.postDelayed(countdownRunnable, 1_000L)
+        }
+    }
+
+    fun cancelCountdown() {
+        handler.removeCallbacks(countdownRunnable)
+        countdown = 0
+    }
+
+    private fun beginGuidedCapture(index: Int) {
+        val step = guideSteps.getOrNull(index) ?: return
+        if (index != guideIndex) return
+        val purpose = when (step.kind) {
+            GuideKind.FLIP_0 -> CapturePurpose.FLIP_0
+            GuideKind.FLIP_180 -> CapturePurpose.FLIP_180
+            GuideKind.NORMAL -> CapturePurpose.NORMAL
+        }
+        startCapture(step.orientation, step.note, purpose, expectedFor(index), fromGuide = true)
+    }
+
+    fun goToGuideStep(index: Int) {
+        if (capturing || countdown > 0) return
+        guideIndex = index.coerceIn(0, guideSteps.size)
+    }
+
+    fun restartGuide() {
+        if (capturing) return
+        cancelCountdown()
+        guideIndex = 0
+        guideDone.clear()
+        lastGuideCapture = null
     }
 
     fun startFlip0() = startCapture(Orientations.FLIP_0, "", CapturePurpose.FLIP_0)
@@ -207,6 +322,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteCapture(c: Capture) {
         captures.remove(c)
+        if (lastGuideCapture?.id == c.id) lastGuideCapture = null
         if (flip0?.id == c.id) flip0 = null
         if (flip180?.id == c.id) flip180 = null
         store.save(captures)
@@ -214,6 +330,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteAllCaptures() {
         captures.clear()
+        lastGuideCapture = null
         resetFlip()
         store.save(captures)
     }

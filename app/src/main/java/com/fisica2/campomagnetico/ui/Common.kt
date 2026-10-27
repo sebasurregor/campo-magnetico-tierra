@@ -46,6 +46,11 @@ fun accuracyLabel(a: Int): String = when (a) {
 /** Acepta coma o punto decimal. */
 fun parseNumber(s: String): Double? = s.trim().replace(',', '.').toDoubleOrNull()?.takeIf { it.isFinite() }
 
+const val FIELD_UP_TEXT =
+    "El campo medido apunta hacia ARRIBA, pero en Medellín apunta hacia abajo. El magnetómetro de este celular " +
+        "parece entregar los ejes invertidos (o hay un imán muy cerca). La brújula y los resultados de este celular " +
+        "no son confiables: prueba con otro celular."
+
 const val INTERFERENCE_TEXT =
     "Posible interferencia: aleja el celular de metales y aparatos; mueve el teléfono en forma de 8 para recalibrar."
 

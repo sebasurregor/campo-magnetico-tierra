@@ -2,6 +2,8 @@ package com.fisica2.campomagnetico.ui
 
 import android.content.ActivityNotFoundException
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,13 +19,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.fisica2.campomagnetico.AttitudeMath
 import com.fisica2.campomagnetico.Capture
 import com.fisica2.campomagnetico.CsvExporter
 import com.fisica2.campomagnetico.MagMath
@@ -34,27 +39,59 @@ import java.time.format.DateTimeFormatter
 
 private val TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CapturesScreen(vm: MainViewModel) {
     var orientation by rememberSaveable { mutableStateOf(Orientations.FLAT_NORTH) }
-    var note by rememberSaveable { mutableStateOf("") }
+    var note by rememberSaveable { mutableStateOf("rumbo 0°") }
+    var stepIndex by rememberSaveable { mutableIntStateOf(0) }
     var confirmDeleteAll by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
 
     // RF6
     Section("Captura promediada (3 s)") {
-        Note("Elige la orientación, deja el teléfono quieto y toca Capturar.")
+        Note("Elige la orientación: abajo aparece cómo debe quedar el celular y cómo debe verse la brújula.")
         Orientations.USER_CHOICES.forEach { option ->
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .selectable(selected = orientation == option, onClick = { orientation = option }),
+                    .selectable(selected = orientation == option, onClick = {
+                        orientation = option
+                        val first = vm.positionsFor(option).firstOrNull()
+                        stepIndex = first ?: -1
+                        note = first?.let { vm.guideSteps[it].note } ?: ""
+                    }),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RadioButton(selected = orientation == option, onClick = { orientation = option })
+                RadioButton(selected = orientation == option, onClick = null)
                 Text(option)
             }
         }
+        val positions = vm.positionsFor(orientation)
+        if (positions.size > 1) {
+            Text("Posición:", Modifier.padding(top = 6.dp), fontWeight = FontWeight.Bold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                positions.forEach { i ->
+                    val label = vm.guideSteps[i].note
+                    if (i == stepIndex) {
+                        Button(onClick = {}) { Text(label) }
+                    } else {
+                        OutlinedButton(onClick = { stepIndex = i; note = label }) { Text(label) }
+                    }
+                }
+            }
+        }
+    }
+
+    val step = vm.guideSteps.getOrNull(stepIndex)?.takeIf { it.orientation == orientation }
+    if (step != null) {
+        Section(step.title) { Text(step.instruction) }
+        val attitude = vm.live?.attitude
+        PositionPanel(attitude, attitude?.let { AttitudeMath.check(it, step.target) }, step.target, vm.theory.declinationDeg)
+        ReadingVsExpected(vm, vm.expectedFor(stepIndex))
+    }
+
+    Section("Capturar") {
         OutlinedTextField(
             value = note,
             onValueChange = { note = it.take(80) },
@@ -64,10 +101,10 @@ fun CapturesScreen(vm: MainViewModel) {
         )
         CaptureProgress(vm)
         Button(
-            onClick = { vm.startCapture(orientation, note) },
+            onClick = { vm.startCapture(orientation, note, expected = step?.let { vm.expectedFor(stepIndex) }) },
             enabled = !vm.capturing,
             modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-        ) { Text("Capturar") }
+        ) { Text("Capturar ($orientation)") }
     }
 
     FlipWizard(vm)
@@ -93,8 +130,8 @@ fun CapturesScreen(vm: MainViewModel) {
             ) { Text("Borrar todas") }
         }
         Note(
-            if (vm.roundCsv) "Las coordenadas del CSV se redondean a 2 decimales (Configuración)."
-            else "Las coordenadas del CSV NO se redondean (Configuración).",
+            if (vm.roundCsv) "Las coordenadas del CSV se redondean a 2 decimales (Ajustes)."
+            else "Las coordenadas del CSV NO se redondean (Ajustes).",
         )
     }
 
@@ -165,7 +202,7 @@ private fun FlipWizard(vm: MainViewModel) {
 }
 
 @Composable
-private fun CaptureCard(c: Capture, onDelete: () -> Unit) {
+internal fun CaptureCard(c: Capture, onDelete: () -> Unit) {
     val time = TIME_FORMAT.format(Instant.ofEpochMilli(c.timeMillis).atZone(ZoneId.systemDefault()))
     val title = c.orientation + if (c.note.isNotBlank()) " — ${c.note}" else ""
     Section(title) {

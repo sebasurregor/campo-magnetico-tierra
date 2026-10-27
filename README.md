@@ -6,20 +6,37 @@ modelo geomagnético que trae Android).
 
 ## Qué hace la app
 
-Tiene tres pestañas:
+Tiene cuatro pestañas:
 
+- **Guía** (modo guiado)
+  - Lleva paso a paso por las 13 capturas de los experimentos (plano al norte, giro de 180° y
+    rotaciones en z, x e y).
+  - Brújula que muestra el norte geográfico (rojo), el norte magnético (gris) y hacia dónde debe
+    apuntar la parte de arriba del celular (rombo).
+  - Indicaciones en palabras ("Gira el celular hacia la derecha 12°", "Baja la punta 5°"), que se
+    ponen en verde cuando la posición es correcta.
+  - Dibujos de cómo debe quedar el celular (visto desde arriba y, si se inclina o se gira, de lado o
+    de frente) y de cómo debe verse la brújula cuando la posición es correcta, junto a la brújula en vivo.
+  - Lista de pasos para ir directo a uno (por ejemplo "Plano hacia el norte").
+  - Lectura actual de Bx, By, Bz frente a la esperada para esa posición.
+  - Botón para capturar con 5 s de espera (para soltar el celular, por ejemplo boca abajo). Al
+    terminar cada captura pasa sola al siguiente paso.
+  - Aviso si el campo medido apunta hacia arriba (magnetómetro con ejes invertidos o imán cerca).
 - **En vivo**
   - Bx, By, Bz y |B| del magnetómetro (μT), unas 10 veces por segundo, con la precisión del sensor.
   - Los valores crudos y el *bias* que estima Android, si el teléfono tiene el sensor sin calibrar.
   - El campo pasado al marco terrestre: X, Y, Z, H, F, I y B∥.
   - Los valores teóricos del plan y del modelo de Android, uno al lado del otro.
+  - La orientación del celular: dirección de la punta, inclinación y giro sobre el eje largo.
   - Una alerta de interferencia cuando corresponde.
 - **Capturas**
+  - Al elegir una orientación (y, en las rotaciones, el ángulo) aparecen los mismos dibujos de la
+    posición y de la brújula; la nota se llena sola y la captura guarda los Bx, By, Bz esperados.
   - Captura promediada de 3 s (promedio ± desviación estándar), etiquetada con la orientación.
   - Tabla medido vs. teórico con diferencia y error porcentual.
   - Asistente de desfase con giro de 180°.
   - Exportación de todas las capturas a CSV.
-- **Configuración**
+- **Ajustes**
   - Ubicación: aproximada del teléfono, escrita a mano o la de Medellín por defecto.
   - Fuente teórica para comparar: valores del plan (por defecto) o modelo de Android.
   - Edición de los valores del plan.
@@ -45,13 +62,20 @@ Tiene tres pestañas:
 
 ## Cómo hacer cada experimento
 
+La forma más fácil es la pestaña **Guía**: sigue la instrucción de cada paso, mueve el celular hasta
+que todo se ponga verde y toca **Capturar**. La brújula de la guía usa el mismo magnetómetro y la
+declinación teórica para marcar el norte geográfico; sirve para colocar el celular, pero no mide D.
+Para medir la declinación, compara con una línea norte–sur marcada con Google Maps.
+
+Si prefieres hacerlo a mano:
+
 Antes de empezar:
 
 - Aleja el teléfono de objetos metálicos, imanes, parlantes, computadores y cables con corriente.
   Usa una mesa de madera o de plástico. Quita la funda si tiene imán.
 - Mueve el teléfono en forma de **8** unas cuantas veces para que Android calibre el magnetómetro,
   hasta que la precisión sea **Media** o **Alta**.
-- En *Configuración*, revisa la ubicación y elige con qué valores teóricos comparar.
+- En *Ajustes*, revisa la ubicación y elige con qué valores teóricos comparar.
 
 ### 1. Plano, con el eje y hacia el norte geográfico
 
@@ -107,6 +131,7 @@ Google Sheets se importa directamente.
 
 | Valor | Significado |
 |---|---|
+| Rumbo, inclinación, giro | Orientación del celular: dirección de la parte de arriba respecto al norte geográfico (0° = norte, 90° = este), cuánto baja la punta y giro sobre el eje largo (0° = pantalla arriba, 180° = boca abajo). En el CSV: `rumbo_deg`, `inclinacion_punta_deg`, `giro_lateral_deg`. |
 | Bx, By, Bz | Campo medido en los ejes del teléfono (μT). Con el teléfono plano y pantalla arriba: x a la derecha, y hacia la parte superior, z saliendo de la pantalla. |
 | \|B\| | Magnitud del campo medido. |
 | Precisión | Estado del sensor: Alta / Media / Baja / No confiable (`SENSOR_STATUS_ACCURACY_*`). |
@@ -213,6 +238,7 @@ Seguridad del workflow:
 ```
 app/src/main/java/com/fisica2/campomagnetico/
   MagMath.kt        física pura (probada con JUnit)
+  Attitude.kt       orientación del celular y pasos del modo guiado (probada con JUnit)
   Capture.kt        capturas, promedios y comparación
   CsvFormat.kt      formato del CSV
   SensorReader.kt   magnetómetro, sin calibrar y gravedad
@@ -220,5 +246,5 @@ app/src/main/java/com/fisica2/campomagnetico/
   TheoryModel.kt    GeomagneticField
   Settings.kt, CaptureStore.kt, CsvExporter.kt, MainActivity.kt
   ui/               pantallas en Jetpack Compose
-app/src/test/.../MagMathTest.kt
+app/src/test/.../MagMathTest.kt, AttitudeMathTest.kt
 ```
